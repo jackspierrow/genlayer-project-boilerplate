@@ -2,6 +2,7 @@
 
 import json
 from genlayer import *
+import genlayer.gl.vm as glvm
 
 
 class FactChecker(gl.Contract):
@@ -38,55 +39,50 @@ Return JSON with exactly these fields:
 
             result = gl.nondet.exec_prompt(
                 prompt,
-                response_format="json"
+                response_format="json",
             )
 
             if not isinstance(result, dict):
-                raise gl.UserError("Invalid LLM response")
+                raise Exception("Invalid LLM response")
 
-            if result.get("verdict") not in (
+            verdict = result.get("verdict")
+
+            if verdict not in (
                 "Supported",
                 "Not Supported",
                 "Unclear",
             ):
-                raise gl.UserError("Invalid verdict")
+                raise Exception("Invalid verdict")
 
             return {
                 "claim": claim,
-                "verdict": result["verdict"],
+                "verdict": verdict,
                 "reason": str(result.get("reason", "")),
             }
 
         def validator_fn(leader_result):
-            if not isinstance(leader_result, gl.vm.Return):
+            if not isinstance(leader_result, glvm.Return):
                 return False
 
             try:
-                leader_data = leader_result.calldata
-
-                if not isinstance(leader_data, dict):
-                    return False
-
-                if leader_data.get("verdict") not in (
-                    "Supported",
-                    "Not Supported",
-                    "Unclear",
-                ):
-                    return False
-
-                own_result = leader_fn()
+                data = leader_result.calldata
 
                 return (
-                    own_result["verdict"]
-                    == leader_data["verdict"]
+                    isinstance(data, dict)
+                    and data.get("verdict")
+                    in (
+                        "Supported",
+                        "Not Supported",
+                        "Unclear",
+                    )
                 )
 
             except Exception:
                 return False
 
-        result = gl.vm.run_nondet_unsafe(
+        result = glvm.run_nondet_unsafe(
             leader_fn,
-            validator_fn
+            validator_fn,
         )
 
         self.last_claim = result["claim"]
